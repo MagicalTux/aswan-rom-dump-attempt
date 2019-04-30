@@ -13,6 +13,7 @@ SECTION .data
 	%include "WonderSwan.inc"
 
 	MYSEGMENT equ 0xF000
+	backgroundMap equ WSC_TILE_BANK1 - MAP_SIZE ; 0x1800 ?
 	
 SECTION .text
 	;PADDING 15
@@ -25,11 +26,6 @@ initialize:
 	mov di, 0x0100
 	mov cx, 0x7E80
 	rep stosw
-
-; copy self to ram at 0x0000
-
-
-
 
 ;-----------------------------------------------------------------------------
 ; initialize registers and RAM
@@ -60,12 +56,40 @@ initialize:
 	out IO_FG_X, al
 	out IO_FG_Y, al
 
+	mov al, BG_MAP( backgroundMap )
+	out IO_FGBG_MAP, al
+
 	in al, IO_LCD_CTRL
 	or al, LCD_ON
 	out IO_LCD_CTRL, al
 
 	xor al, al
 	out IO_LCD_ICONS, al
+
+; copy self to ram at 0x0000
+
+	; source address of the code in DS:SI (ds is already set to MYSEGMENT)
+	mov si, 0
+	; destination address of the code in ES:DI (es is already set to 0)
+	mov di, 0
+	mov cx, 0x1800
+	rep movsb
+
+	; execute code from the ram
+	db	0xEA	; jmpf
+	dw	runfromram	; Label
+	dw	0	; Segment
+runfromram:
+	xor ax,ax
+	mov ds, ax
+
+	; set color to black
+	mov al, 0x03
+	out BG_ON,al
+
+	; test
+	mov ax, backgroundMap
+	mov (ax), 0xffff
 
 freeze:
 	jmp freeze
