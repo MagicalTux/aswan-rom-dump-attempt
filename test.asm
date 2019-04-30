@@ -43,6 +43,24 @@ initialize:
 
 	out IO_SRAM_BANK,al
 
+; copy self to ram at 0x0000
+
+; source address of the code in DS:SI (ds is already set to MYSEGMENT)
+	mov si, 0
+; destination address of the code in ES:DI (es is already set to 0)
+	mov di, 0
+	mov cx, 0x1000 ; we are smaller than that (if not, this will just crash)
+	rep movsb
+
+; execute code from the ram
+	db	0xEA	; jmpf
+	dw	runfromram	; Label
+	dw	0	; Segment
+runfromram:
+	xor ax,ax
+	mov ds, ax
+
+
 ;-----------------------------------------------------------------------------
 ; initialize video
 ;-----------------------------------------------------------------------------
@@ -66,30 +84,34 @@ initialize:
 	xor al, al
 	out IO_LCD_ICONS, al
 
-; copy self to ram at 0x0000
+; set color to black
+	;mov al, 0x03
+	;out BG_ON,al
 
-	; source address of the code in DS:SI (ds is already set to MYSEGMENT)
-	mov si, 0
-	; destination address of the code in ES:DI (es is already set to 0)
-	mov di, 0
-	mov cx, 0x1800
-	rep movsb
-
-	; execute code from the ram
-	db	0xEA	; jmpf
-	dw	runfromram	; Label
-	dw	0	; Segment
-runfromram:
-	xor ax,ax
-	mov ds, ax
-
-	; set color to black
-	mov al, 0x03
-	out BG_ON,al
-
-	; test
-	mov ax, backgroundMap
+; test
+	mov ax, WSC_TILE_BANK1
 	mov (ax), 0xffff
+
+	mov ax, BG_CHR( 0, 4, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	mov di, backgroundMap
+	mov cx, MAP_TWIDTH * MAP_THEIGHT
+	rep stosw
+
+; try to fill palettes with something that will look liek something
+	mov ax, 0xf0f0
+	mov di, WSC_PALETTES
+	mov cx, 32*10
+	rep stosw
+
+	; tell WonderSwan which sprites we'd like displayed
+	mov al, 0 ; first sprite to enable (inclusive)
+	out IO_SPR_START, al
+	mov al, 2 ; last+1 sprite to enable (exclusive)
+	out IO_SPR_STOP, al
+
+; turn on display
+	mov al, BG_ON | SPR_ON
+	out IO_DISPLAY_CTRL, al
 
 freeze:
 	jmp freeze
