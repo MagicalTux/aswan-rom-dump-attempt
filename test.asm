@@ -13,19 +13,14 @@ SECTION .data
 	%include "WonderSwan.inc"
 
 	MYSEGMENT equ 0xF000
-	backgroundMap equ WSC_TILE_BANK1 - MAP_SIZE ; 0x1800 ?
-	
+	backgroundMap equ WSC_TILE_BANK1 - MAP_SIZE
+
 SECTION .text
 	;PADDING 15
 	
 initialize:
 	cli
 	cld
-
-	; clear Ram
-	mov di, 0x0100
-	mov cx, 0x7E80
-	rep stosw
 
 ;-----------------------------------------------------------------------------
 ; initialize registers and RAM
@@ -40,10 +35,14 @@ initialize:
 	mov ss, ax
 	mov sp, WSC_STACK
 
+	; clear Ram
+	mov di, 0x0100
+	mov cx, 0x7E80
+	rep stosw
 
 	out IO_SRAM_BANK,al
 
-; copy self to ram at 0x0000
+; copy self to ram at 0x0000 (DS:SI => ES:DI)
 
 ; source address of the code in DS:SI (ds is already set to MYSEGMENT)
 	mov si, 0
@@ -53,19 +52,26 @@ initialize:
 	rep movsb
 
 ; execute code from the ram
-	db	0xEA	; jmpf
-	dw	runfromram	; Label
-	dw	0	; Segment
+	db      0xEA    ; jmpf
+	dw      runfromram      ; Label
+	dw      0       ; Segment
+
 runfromram:
 	xor ax,ax
 	mov ds, ax
 
+; attempt to disconnect cart
+; BIOS bank out (locking) (0=BIOS mapped, 1=Cart mapped)
+	in al, IO_HARDWARE_TYPE
+	and al, 0xfe
+	out IO_HARDWARE_TYPE, al
 
 ;-----------------------------------------------------------------------------
 ; initialize video
 ;-----------------------------------------------------------------------------
 	in al, IO_VIDEO_MODE
-	or al, VMODE_4C_MONO | VMODE_CLEANINIT
+	;or al, VMODE_4C_MONO | VMODE_CLEANINIT
+	or al, VMODE_16C_CHK | VMODE_CLEANINIT
 	out IO_VIDEO_MODE, al
 
 	xor ax, ax
@@ -84,37 +90,137 @@ runfromram:
 	xor al, al
 	out IO_LCD_ICONS, al
 
-; set color to black
-	;mov al, 0x03
-	;out BG_ON,al
+;-----------------------------------------------------------------------------
+; copy background (road and railing) and foreground (rain) tile data
+; into WS's tile and palette areas
+;-----------------------------------------------------------------------------
+	; copy background tile data (two tiles) to tile bank 1
+	; immediately following sprite tile data
 
-; test
-	mov ax, WSC_TILE_BANK1
-	mov (ax), 0xffff
+	; DS:SI => ES:DI
+	mov ax, 0xf000
+	mov ds, ax
+	mov si, 0 ; BackgroundTileData
+	mov di, WSC_TILE_BANK1 + 32
+	mov cx, 32*9
+	rep movsb
 
-	mov ax, BG_CHR( 0, 4, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
-	mov di, backgroundMap
-	mov cx, MAP_TWIDTH * MAP_THEIGHT
-	rep stosw
+	; reset ds to zero
+	xor ax, ax
+	mov ds, ax
 
-; try to fill palettes with something that will look liek something
-	mov ax, 0xf0f0
+;-----------------------------------------------------------------------------
+; copy background (road and railing) and foreground (rain) tile palettes
+; into WS's palette areas
+;-----------------------------------------------------------------------------	
+	
+	; copy 16-colour (2 bytes per colour) background palette to 
+	; beginning of palettes area (becoming palette 0)
+	mov si, BackgroundTilePalette
 	mov di, WSC_PALETTES
-	mov cx, 32*10
-	rep stosw
+	mov cx, 16
+	rep movsw
 
-	; tell WonderSwan which sprites we'd like displayed
-	mov al, 0 ; first sprite to enable (inclusive)
-	out IO_SPR_START, al
-	mov al, 2 ; last+1 sprite to enable (exclusive)
-	out IO_SPR_STOP, al
+;-----------------------------------------------------------------------------
+; make background map point to our tiles, essentially "painting" the
+; background layer with out tiles, coloured as per our palettes
+;-----------------------------------------------------------------------------	
 
-; turn on display
-	mov al, BG_ON | SPR_ON
+	; write tile 2 (first background tile) to each of the background map tiles
+	mov ax, BG_CHR( 1, 0, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	mov bx, backgroundMap + 66
+	mov [bx], ax
+
+	mov ax, BG_CHR( 2, 0, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	add bx, 2
+	mov [bx], ax
+
+	mov ax, BG_CHR( 3, 0, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	add bx, 2
+	mov [bx], ax
+
+	mov ax, BG_CHR( 4, 0, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	add bx, 2
+	mov [bx], ax
+
+	mov ax, BG_CHR( 5, 0, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	add bx, 2
+	mov [bx], ax
+
+	mov ax, BG_CHR( 6, 0, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	add bx, 2
+	mov [bx], ax
+
+	mov ax, BG_CHR( 7, 0, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	add bx, 2
+	mov [bx], ax
+
+	mov ax, BG_CHR( 8, 0, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	add bx, 2
+	mov [bx], ax
+
+	mov ax, BG_CHR( 9, 0, 0, 0, 0 ) ; BG_CHR(tile,pal,bank,hflip,vflip)
+	add bx, 2
+	mov [bx], ax
+
+	;mov di, backgroundMap
+	;mov cx, MAP_TWIDTH * MAP_THEIGHT
+	;rep stosw
+
+
+
+	; turn on display
+	mov al, BG_ON
 	out IO_DISPLAY_CTRL, al
 
+; freeze
 freeze:
 	jmp freeze
 
+
+;-----------------------------------------------------------------------------
+; constants area
+;-----------------------------------------------------------------------------
+
+	align 32
+	align 2
+
+	BackgroundTilePalette: 
+		db 0x00, 0x00
+		db 0xff, 0xff
+		db 0x00, 0x0f
+		db 0xff, 0xff
+		db 0x7f, 0x7f
+		db 0x7f, 0x7f
+		db 0x7f, 0x7f
+		db 0x7f, 0x7f
+		db 0x7f, 0x7f
+		db 0x7f, 0x7f
+		db 0x7f, 0x7f
+		db 0x7f, 0x7f
+		db 0x7f, 0x7f
+		db 0x7f, 0x7f
+		db 0x7f, 0x7f
+		db 0x7f, 0x7f
+	BackgroundTilePaletteEnd:
+	BackgroundTileData:
+		db 0x01, 0x11
+		db 0x11, 0x11
+		db 0x11, 0x11
+		db 0x11, 0x11
+		db 0x11, 0x11
+		db 0x11, 0x11
+		db 0x11, 0x11
+		db 0x11, 0x11
+		db 0x11, 0x11
+		db 0x11, 0x11
+		db 0x11, 0x11
+		db 0x11, 0x11
+		db 0x11, 0x11
+		db 0x11, 0x11
+		db 0x11, 0x11
+		db 0x11, 0x10
+	BackgroundTileDataEnd:
+	
 	ROM_HEADER initialize, MYSEGMENT, RH_WS_COLOR, RH_ROM_8MBITS, RH_NO_SRAM, RH_HORIZONTAL
 
